@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -42,6 +43,7 @@ import com.arkivanov.decompose.ExperimentalDecomposeApi
 import com.arkivanov.decompose.router.stack.StackNavigation
 import com.arkivanov.decompose.router.stack.childStack
 import com.arkivanov.decompose.router.stack.pop
+import com.arkivanov.decompose.router.stack.popWhile
 import com.arkivanov.decompose.router.stack.push
 import com.arkivanov.essenty.backhandler.BackDispatcher
 import com.arkivanov.essenty.backhandler.BackHandler
@@ -70,20 +72,36 @@ fun App(rootComponent: RootComponent) {
         windowInsets =  WindowInsets(top = 34.dp),// WindowInsets.statusBars,
         onBack = {
             stackComponent.pop()
-        }
-    ) {
-        Surface {
+        },
+    ) { child ->
+        Surface(
+            color = Color.White//.copy(alpha = 0.2f)
+        ) {
             Column(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
 
-                Text("Sheet ${it.instance}")
+                Text("Sheet ${child.instance}")
                 Button(onClick = {
                     stackComponent.push()
                 }) {
                     Text("Push")
+                }
+                if (child.instance != 1) {
+                    Button(onClick = {
+                        stackComponent.pop()
+                    }) {
+                        Text("Back")
+                    }
+                }
+                if (child.instance > 2) {
+                    Button(onClick = {
+                        stackComponent.popAll()
+                    }) {
+                        Text("To first")
+                    }
                 }
             }
         }
@@ -121,6 +139,10 @@ class SheetStackComponent(context: ComponentContext) : ComponentContext by conte
 
     fun pop() {
         navigation.pop()
+    }
+
+    fun popAll() {
+        navigation.popWhile { i -> i != 1 }
     }
 }
 

@@ -48,7 +48,7 @@ internal fun PredictiveSheetGestureOverlay(
     backDispatcher: BackDispatcher,
     modifier: Modifier = Modifier,
     onClose: (() -> Unit)? = null,
-    topPadding : Float,
+    topPadding: Float,
     content: @Composable () -> Unit,
 ) {
     Box(

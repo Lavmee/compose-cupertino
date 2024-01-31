@@ -17,9 +17,13 @@
 
 package io.github.alexzhirkevich.cupertino.decompose
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
@@ -28,15 +32,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.arkivanov.decompose.Child
 import com.arkivanov.decompose.ExperimentalDecomposeApi
 import com.arkivanov.decompose.extensions.compose.jetbrains.stack.Children
+import com.arkivanov.decompose.extensions.compose.jetbrains.stack.animation.StackAnimation
 import com.arkivanov.decompose.extensions.compose.jetbrains.stack.animation.predictiveback.predictiveBackAnimation
 import com.arkivanov.decompose.extensions.compose.jetbrains.stack.animation.stackAnimation
 import com.arkivanov.decompose.extensions.compose.stack.animation.predictiveback.PredictiveSheetGestureOverlay
@@ -44,8 +49,6 @@ import com.arkivanov.decompose.router.stack.ChildStack
 import com.arkivanov.decompose.value.Value
 import com.arkivanov.essenty.backhandler.BackDispatcher
 import io.github.alexzhirkevich.cupertino.cupertinoTween
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.debounce
 
 @Composable
 fun <T : Any> Value<T>.subscribeAsState2(
@@ -64,59 +67,57 @@ fun <T : Any> Value<T>.subscribeAsState2(
 
 @ExperimentalDecomposeApi
 @Composable
-fun <C: Any,T : Any> CupertinoSheetStack(
+fun <C : Any, T : Any> CupertinoSheetStack(
     stack: Value<ChildStack<C, T>>,
     backDispatcher: BackDispatcher,
-    onBack : () -> Unit,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    shape : Shape = DefaultSheetShape,
-    backgroundColor : Color = Color.Black,
+    shape: CornerBasedShape = DefaultSheetShape,
+    backgroundColor: Color = Color.Black,
     windowInsets: WindowInsets = WindowInsets.statusBars,
     content: @Composable (child: Child.Created<C, T>) -> Unit,
 ) {
+    val state by stack.subscribeAsState2()
+    val backStackSize = rememberUpdatedState(state.backStack.size)
 
-    val subscribed by stack.subscribeAsState2()
+    val isPredictive = remember { mutableStateOf(false) }
 
-//    val backStackSize = remember {
-//        mutableStateOf(subscribed.backStack.size)
-//    }
-//
-//
-//    LaunchedEffect(0) {
-//        snapshotFlow { subscribed }.debounce(50).collectLatest {
-//            backStackSize.value = it.backStack.size
-//            println(it)
-//        }
-//    }
+    val doPadding by rememberUpdatedState(backStackSize.value > 0)
 
-    val backStackSize = rememberUpdatedState(subscribed.backStack.size)
+    val maxTopPadding by rememberUpdatedState(
+        newValue = windowInsets.asPaddingValues().calculateTopPadding() + SheetTopPadding
+    )
 
+    val padding = animateDpAsState(
+        if (doPadding && !isPredictive.value) maxTopPadding else 0.dp
+    )
 
     PredictiveSheetGestureOverlay(
         backDispatcher = backDispatcher,
         topPadding = LocalDensity.current.run {
-            windowInsets.getTop(LocalDensity.current) + SheetTopPadding.toPx()
+            maxTopPadding.toPx()
         },
         modifier = modifier
             .background(backgroundColor),
     ) {
-        Children(
+        BackStackedChildren(
             stack = stack,
             animation = predictiveBackAnimation(
                 animation = stackAnimation(
                     cupertinoSheetStackAnimator(
                         backStackSize = backStackSize,
-                        shape = shape,
-                        windowInsets = windowInsets,
-                        animationSpec = cupertinoTween(durationMillis = 1000)
+                        padding = padding,
+                        layoutShape = shape,
+                        animationSpec = cupertinoTween(2000)
                     )
                 ),
                 selector = { initialBackEvent, _, _ ->
                     cupertinoSheetPredictiveBackAnimatable(
                         initialBackEvent = initialBackEvent,
                         shape = shape,
-                        windowInsets = windowInsets,
-                        backStackSize = backStackSize
+                        backStackSize = backStackSize,
+                        isPredictive = isPredictive,
+                        padding = padding,
                     )
                 },
                 backHandler = backDispatcher,
@@ -127,4 +128,56 @@ fun <C: Any,T : Any> CupertinoSheetStack(
     }
 }
 
-internal val DefaultSheetShape = RoundedCornerShape(16.dp)
+@Composable
+internal fun <C : Any, T : Any> BackStackedChildren(
+    stack: Value<ChildStack<C, T>>,
+    modifier: Modifier = Modifier,
+    animation: StackAnimation<C, T>? = null,
+    content: @Composable (child: Child.Created<C, T>) -> Unit,
+) {
+    val state by stack.subscribeAsState2()
+    BackStackedChildren(
+        stack = state,
+        modifier = modifier,
+        animation = animation,
+        content = content
+    )
+}
+
+@Composable
+internal fun <C : Any, T : Any> BackStackedChildren(
+    stack: ChildStack<C, T>,
+    modifier: Modifier = Modifier,
+    animation: StackAnimation<C, T>? = null,
+    content: @Composable (child: Child.Created<C, T>) -> Unit,
+) {
+    val visibleBackStack = stack.backStack.lastOrNull()
+
+    visibleBackStack?.let { child ->
+        val factor = 1f
+        Box(
+            modifier = Modifier
+                .drawWithContent {
+                    drawContent()
+                    drawRect(Color.Black, alpha = factor / 4)
+                }
+                .graphicsLayer {
+                    scaleX = 1f + (-factor) / 10f
+                    scaleY = scaleX
+                    shape = DefaultSheetShape
+                    clip = true
+                }
+        ) {
+            content(child)
+        }
+    }
+
+    Children(
+        stack = stack,
+        animation = animation,
+        content = content,
+        modifier = modifier
+    )
+}
+
+internal val DefaultSheetShape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
